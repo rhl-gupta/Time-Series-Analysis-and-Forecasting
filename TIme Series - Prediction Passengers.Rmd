@@ -1,0 +1,354 @@
+---
+title: <span style="color:blue">Time Series</span>
+author: "Rahul Gupta"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# {.tabset}
+
+##<span style="color:blue">Problem Statement & Data Analysis</span>
+
+
+####*Congratulations on your new job! This time you are helping out Unicorn Investors with your data hacking skills. They are considering making an investment in a new form of transportation - JetRail. JetRail uses Jet propulsion technology to run rails and move people at a high speed! While JetRail has mastered the technology and they hold the patent for their product, the investment would only make sense, if they can get more than 1 Million monthly users with in next 18 months.*
+ 
+####*You need to help Unicorn ventures with the decision. They usually invest in B2C start-ups less than 4 years old looking for pre-series A funding. In order to help Unicorn Ventures in their decision, you need to forecast the traffic on JetRail for the next 7 months.*
+
+
+#### About the dataset
+#### Provided dataset has two columns one is the time column and the other one is represensting the number of passensgers travelled in the rail. Granularity of data is at 'hour', which means number of passengers travelled in rail each hour of the day. Data is available from 25th of August, 2012 midnight till 25th of September, 2014 midnight. This accounts for 18288 observations.
+
+
+#### Top 5 and last 5 Observations in the dataset
+```{r, warning=FALSE,echo=FALSE,message=FALSE}
+data = read.csv('C:\\MSA\\Spring_Semester\\Time_Series\\Train.csv',header=TRUE,stringsAsFactors = FALSE)
+data$ID<-NULL
+
+library(lubridate)
+
+data$TS <- dmy_hm(data$Datetime)
+
+data$Datetime <- data$TS
+data$TS <- NULL
+
+final_data <- xts::xts(data$Count,order.by = data$Datetime)
+colnames(final_data) <- c('count')
+
+head(final_data)
+
+```
+```{r, warning=FALSE,echo=FALSE,message=FALSE}
+tail(final_data)
+
+
+```
+
+
+
+```{r, warning=FALSE,echo=FALSE,message=FALSE,fig.align='center'}
+plot(final_data,main='Plotting the available dataset') 
+
+```
+
+
+#####Since the data is at hourly level for two long years i.e. from end of August, 2012 to end of September, 2014. It is difficult to see the underlying pattern from the plot of whole dataset. But few initial observations are : there is an increasing trend and also increasing variance with time. 
+
+***
+####__Analyzing data at daily and monthly level__
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.align='center',strip.white=FALSE}
+par(mfrow=c(1,2))
+daily <- window(final_data,end = "2012-8-25 19:00:00")
+plot(daily)
+monthly <- window(final_data,end = "2012-9-25 19:00:00")
+plot(monthly)
+          
+          
+
+```
+
+
+#####These two plots of data; one day data (25th of Sep.,2012)[left] and one month data (25th Sep., 2012 to 25th Oct., 2012)[right] also not helping much in identifying the underlying pattern. 
+
+***
+####__Plotting logged and differencing data __
+
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.align='center',strip.white=FALSE}
+
+par(mfrow=c(1,1))
+plot(log(final_data),main = 'log(data)')
+plot(diff(log(final_data)),main = 'diff(log(data))')
+```
+
+#####It seems after differencing the logged data, trend is removed but variablilty around mean is still an issue.
+
+##<span style="color:blue">ACF and PACF</span>
+
+#####__ACF and PACF of actual data__
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.height=3,fig.width=4,strip.white=FALSE}
+library(forecast)
+library(ggplot2)
+par(mfrow=c(1,2))
+forecast::ggAcf(final_data,lag.max = 100)  + ggtitle('ACF plot of data')
+forecast::ggPacf(final_data,lag.max = 100) + ggtitle('PACF plot of data')
+                      
+```
+
+##### From the ACF plot we can see seasonlaity exists, with a period of 24 lags and PACF plots also show significant spikes till lag 24.
+
+***
+#####__ACF and PACF of differenced and logged data __
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.height=3,fig.width=4,strip.white=FALSE}
+par(mfrow=c(1,2))
+forecast::ggAcf(log(final_data),lag.max = 100) + ggtitle('ACF plot of log(data)')
+forecast::ggPacf(log(final_data),lag.max = 100) + ggtitle('PACF plot of log(data)')
+
+par(mfrow=c(1,1))
+
+par(mfrow=c(1,2))
+forecast::ggAcf(diff(log(final_data)),lag.max = 200) + ggtitle('ACF plot of diff(log(data))')
+forecast::ggPacf(diff(log(final_data)),lag.max = 200) + ggtitle('PACF plot of diff(log(data))')
+```
+
+##### ACF and PACF plots of logged and differenced series are not helping much in uncovering the underlying phenomenon. All it is showing that there exists sesonality of 24 in the dataset. Since the dataset is at hour level and being a local transportion data, 24 hours of seasonality is seems to be a good finding. Because commuters go to office almost at the same time in the morning, so pattern repeats after 24 hours. 
+
+***
+#####__ACF and PACF of actual data with differencing of 24 to see the seasonality effect__
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.height=3,fig.width=4,strip.white=FALSE}
+par(mfrow=c(1,2))
+ggAcf(diff(final_data,24),lag.max = 100) + ggtitle('ACF plot of data with 24 differencing')
+ggPacf(diff(final_data,24),lag.max = 100)+ ggtitle('PACF plot of data with 24 differencing')
+```
+
+##### ACF plot of data with differencing (or lag differencing) value of 24 is tappering down and here again seasonality effect is visible at multiples of 24.
+##### PACF also show a seasonality component at multiples of 24, with damping spikes at seasonality level but within seasonality period of 24, there are few significant spikes of the order of 2 or 4. So, it suggest an AR(2) or AR(4) base model
+
+***
+#####From the above observations, the suitable models that can be tried on this dataset are 
+####*__Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=0,S=24)__*
+####*__Seasonal ARIMA(p=4,d=0,q=0,P=1,D=1,Q=0,S=24)__*
+####*__Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=1,S=24)__*
+
+##<span style="color:blue">Modeling</span>
+
+#####The potential models have been identified in the last discussion. But before fitting the models, let's split the data into train and test, so that the model can be evaluated on paramters like RMSE, MAPE etc. 
+
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.height=3,fig.width=4,strip.white=FALSE}
+train <- window(final_data,end = "2014-05-31 23:00:00")
+test <- window(final_data,start = "2014-06-01 00:00:00")
+
+```
+
+####__Data Splitting__
+
+#####Since the data is for almost two years i.e. from end of August, 2012 to end of September, 2014. Split of data was made in such a way that train dataset will contain data till June, 2014 and rest data of four months will be assigned to test dataset. 
+#####__This results in almost 85:15 train test split.__ 
+
+***
+#####*__Model 1 : Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=0,S=24)__*
+```{r,warning=FALSE,echo=FALSE,message=FALSE,strip.white=FALSE,results='hide'}
+library(astsa)
+model_1 <- sarima(train,p=2,d=0,q=0,P=1,D=1,Q=0,S=24)
+model_1
+```
+
+```{r,warning=FALSE,echo=FALSE,message=FALSE}
+model_1$ttable
+```
+Value of AIC for the above model is `r model_1$AIC`   
+
+Value of AIC for the above model is `r model_1$BIC`
+
+***
+#####*__Model 2 : Seasonal ARIMA(p=4,d=0,q=0,P=1,D=1,Q=0,S=24)__*
+```{r,warning=FALSE,echo=FALSE,message=FALSE,strip.white=FALSE,results='hide'}
+model_2 <- sarima(train,p=4,d=0,q=0,P=1,D=1,Q=0,S=24)
+model_2
+```
+
+```{r,warning=FALSE,echo=FALSE,message=FALSE}
+model_2$ttable
+```
+Value of AIC for the above model is `r model_2$AIC`  
+
+Value of AIC for the above model is `r model_2$BIC`
+
+***
+#####*__Model 3 : Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=1,S=24)__*
+```{r,warning=FALSE,echo=FALSE,message=FALSE,strip.white=FALSE,results='hide'}
+model_3 <- sarima(train,p=2,d=0,q=0,P=1,D=1,Q=1,S=24)
+model_3
+```
+
+```{r,warning=FALSE,echo=FALSE,message=FALSE}
+model_3$ttable
+```
+Value of AIC for the above model is `r model_3$AIC` 
+
+Value of AIC for the above model is `r model_3$BIC`
+
+####Observations from the above models :   
+All three above models have performed similarly, if we consider thier AIC and BIC values. Model 3 i.e. *__Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=1,S=24)__* is performing little better than other two. But the concern for all three models is that, there are still few spikes  in the ACF of residuals and for none of the model there exist good p-values for Q statistics (or Ljung-Box statistics), which means we are still loosing the information in the residuals and it is not a white noise.
+
+*** 
+#####*__Model 4 : TBATS(T for trigonometric regressors to model multiple-seasonalities, B for Box-Cox transformations, A for ARMA errors, T for trend, S for seasonality) model to handle multiple seasonality in the data__* 
+  
+
+#####Considering the business model of transportation industry, it is understood that there are two kinds of seasonality in the transportation data. One is at daily level and other one is at weekly level. Below model is built for two level of seasonality (i.e. daily and weekly) in data.
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.width=10,strip.white=FALSE}
+x <- tbats(msts(train,seasonal.periods = c(24,168)))
+plot(x)
+```
+
+##<span style="color:blue">Model Evaluation & Forecasting</span>
+##### In the modelling phase, four models were developed. In this  section, these four models will be used to forecast for time range same as in the test dataset. This is done to evaluate the models by comparing the results with the test dataset. The parameter choosen to compare between the models is RMSE. Rule of RMSE is, lower the better. The model which will give the minimum RMSE will be used as a final model for prediction of number of passengers in the rail for next 7 months to make a decision whether to invest or not.
+
+#####*__Forecasting using Model 1 : Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=0,S=24)__*
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.width=8}
+forecast_1 <- sarima.for(test,n.ahead = 2803,p=2,d=0,q=0,P=1,D=1,Q=0,S=24)
+accuracy(forecast_1$pred,test)
+```
+***
+#####*__Forecasting using Model 2 : Seasonal ARIMA(p=4,d=0,q=0,P=1,D=1,Q=0,S=24)__*
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.width=8}
+forecast_2 <- sarima.for(test,n.ahead = 2803,p=4,d=0,q=0,P=1,D=1,Q=0,S=24)
+accuracy(forecast_2$pred,test)
+```
+***
+#####*__Forecasting using Model 3 : Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=1,S=24)__*
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.width=8}
+forecast_3 <- sarima.for(test,n.ahead = 2803,p=2,d=0,q=0,P=1,D=1,Q=1,S=24)
+accuracy(forecast_3$pred,test)
+```
+***
+#####*__Forecasting using Model 4 : TBATS with daily and weekly seasonality__*
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.width=8}
+forecast_4 <- predict(x,h=2803)
+autoplot(forecast_4) + ggtitle('Forecast from TBATS') + ylab('Predicted Values')
+accuracy(forecast_4$mean,test)
+
+```
+***
+#####__Observations from the forecasting results :__      
+```{r,warning=FALSE,echo=FALSE,message=FALSE}
+library("gridExtra")
+Model <- c("Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=0,S=24)","Seasonal ARIMA(p=4,d=0,q=0,P=1,D=1,Q=0,S=24)","Seasonal ARIMA(p=2,d=0,q=0,P=1,D=1,Q=1,S=24)","TBATS")
+RMSE <- as.vector(c(accuracy(forecast_1$pred,test)[2],accuracy(forecast_2$pred,test)[2],accuracy(forecast_3$pred,test)[2],accuracy(forecast_4$mean,test)[2]))
+Compare <- data.frame(Model,RMSE)
+grid.table(Compare)
+```
+
+  
+##### __TBATS model gives the best Test RMSE among all the models.__
+
+####TBATS model will be used for forecasting the number of passengers in rail for next 7 months as required by the business in order to make decision whether to invest in this new mode of transportation or not. 
+
+
+##<span style="color:blue">Summary</span>
+
+### __Understanding the context of business case__
+
+***
+
+#####*Unicorn Investors are considering making an investment in a new form of transportation - JetRail. JetRail uses Jet propulsion technology to run rails and move people at a high speed! While JetRail has mastered the technology and they hold the patent for their product. __The investment would only make sense, if they can get more than 1 Million monthly users with in next 18 months.__*
+ 
+#####*Unicorn Investors usually invest in B2C start-ups less than 4 years old looking for pre-series A funding. This report will help Unicorn ventures in their decision, by forecasting the traffic on JetRail for the next 7 months. So by looking at the trend or growth rate of this mode of transporation for next seven months, Unicorn will have quantiative information before making decision that JetRail will be able to get more than 1 million users per month or not.*    
+
+***
+
+#####__Plotting the JetRail growth from inseption till date__
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.width=8}
+# Preparing data at month level from houly level 
+library(tidyverse)
+data_2<-data
+data_2$month <-lubridate::month(data_2$Datetime,label = TRUE)
+data_2$year <- lubridate::year(data$Datetime)
+summed_data <- data_2  %>% group_by(year,month) %>% summarise(passengers = sum(Count))
+summed_data_filter <- summed_data %>% filter((passengers!=496))
+summed_data_filter$Year_Mon <- zoo::as.yearmon(paste(summed_data_filter$year,match(summed_data_filter$month,month.abb),sep = '-'))
+
+# Plotting monthly data
+ggplot(summed_data_filter,aes(x=Year_Mon,y=passengers)) + 
+  geom_line(color='red',size=1.5) + geom_point(color='blue',size=2) + ggtitle("Users per month from inseption till date") + scale_y_continuous(name="No. of users of Rail", limits=c(0, 300000)) + scale_x_continuous(name="Time")
+```
+
+
+***
+  
+  
+#####__Forecasting for next 7 months using the selected TBATS model__
+
+```{r,warning=FALSE,echo=FALSE,message=FALSE,fig.width=9}
+data_forecast = read.csv('C:\\MSA\\Spring_Semester\\Time_Series\\Test__dates.csv',header=TRUE,stringsAsFactors = FALSE)
+
+data_forecast$TS <- dmy_hm(data_forecast$Datetime)
+
+data_forecast$Datetime <- data_forecast$TS
+data_forecast$TS <- NULL
+
+forecast_final <- tbats(msts(final_data,seasonal.periods = c(24,168)))
+forecast_TBATS <- predict(forecast_final,h=5112)
+TBATS_forecasted_data <- cbind.data.frame(data_forecast,Passenger=forecast_TBATS$mean)
+TBATS_forecasted_data$month <-lubridate::month(TBATS_forecasted_data$Datetime,label = TRUE)
+TBATS_forecasted_data$year <- lubridate::year(TBATS_forecasted_data$Datetime)
+TBATS_forecasted_summed_data <- TBATS_forecasted_data  %>% group_by(year,month) %>% summarise(passengers = sum(Passenger))
+
+summed_data_filter[summed_data_filter$Year_Mon=='Sep 2014',]$passengers <- summed_data_filter[summed_data_filter$Year_Mon=='Sep 2014',]$passengers + 61614.41    
+TBATS_forecasted_summed_data_filter <- TBATS_forecasted_summed_data %>% filter(month!="Sep")
+
+TBATS_forecasted_summed_data_filter$Year_Mon <- zoo::as.yearmon(paste(TBATS_forecasted_summed_data_filter$year,match(TBATS_forecasted_summed_data_filter$month,month.abb),sep = '-'))
+
+ggplot(data=rbind.data.frame(cbind.data.frame( summed_data_filter,Type='Actual'),cbind.data.frame(TBATS_forecasted_summed_data_filter,Type='Forecasted')), aes(x=Year_Mon,y=passengers,color=Type)) + geom_line(size=1.5) + geom_point(color='blue',size=2) + ggtitle("Forecast for next 7 months") + scale_y_continuous(name="No. of users of Rail") + scale_x_continuous(name="Time")
+```
+
+
+***
+ 
+ 
+#####*The above forecast is not what was expected because it is not able to capture the increasing trend and the forecast is fluctuating near 0.4 million users of rail, which is not following the extisting pattern of last two years. What if, we look at this problem of forecasting the users in future from different perspective.* 
+
+
+#####*The new perspective is to ignore the seasonality and use aggregated data instead of hourly level, make the data to rollup to monthly level and then forecast directly at month level for future months. This approach might able to capture the high level trend of data. Let's again reiterate our goal, the goal is to predict the number of users in next 7 months, with the aim that whether the users will cross the mark of one million in next 18 months. Hence, aggregating the data to month level is a considerable approach.*
+ 
+
+##### On aggregating the data to month level, the best model is ARIMA(1,2,0). Below results are using this model.
+
+
+```{r,warning=FALSE,echo=FALSE,message=FALSE,results='hide',fig.width=8}
+sum_train <- summed_data_filter
+auto.arima(sum_train$passengers)
+qq <- sum_train$passengers %>% forecast::Arima(order = c(1,2,0)) %>% forecast(h=7)
+
+autoplot(qq) + ggtitle('Forecasting for 7 months using aggregated data') + xlab('Time (In months)') + ylab("No. of users of Rail")
+
+```
+ 
+   
+#####*From the above plot, one can say that in the next sevem months, the number of users of Rail will reach around 6.6 millions per month. But the target is one million users per month in the next 18 months. So in order to make an inference on this, one need to look at growth rate graph and can clearly see that the number of users will cross the one million mark much before 18 months.* 
+ 
+***
+
+    
+#####__Extraplotting the forecast to find the number of months needed to cross one million users mark__
+
+```{r,warning=FALSE,echo=FALSE,message=FALSE,results='hide',fig.width=8}
+d=data.frame(month=c(25,39.4),event=c("Forecasting starts",'Cross 1 million users'))
+
+sum_train$passengers %>% forecast::Arima(order = c(1,2,0)) %>% forecast(h=15) %>% autoplot() + ggtitle('Forecasting till one million users are achieved') + xlab('Time (In months)') + ylab("No. of users of Rail") + geom_abline(slope = 0,intercept = 1000000,show.legend = TRUE,color='red') + 
+geom_vline(data=d, mapping=aes(xintercept=month), color="blue") +
+geom_text(data=d, mapping=aes(x=month, y=0, label=event), size=4, angle=90, vjust=-0.4, hjust=0)
+```
+  
+##### From the above plot, it is obvious that the number of people using JetRail as a mode of transportation will cross the one million mark after 15 months provided the given data of past two years. 
+
+####<span style="color:blue">Recommendation</span> 
+
+***
+
+##### From all the analysis that includes forecasting the number of users of Rail for next 7 months from the provided data of two years. The data provided was at hourly level and using that data, forecasting results were not so exciting because that data suffers from many problems like multiple seasonality i.e. daily and weekly. Due to which, another approach of aggregating the data was adopted because the forecasting results of model are needed to make a decision at higher evel of time frame i.e. month. So original data was rolled up to month level and then forecasting was done. The forecasting on aggregated data show very good results. It clearly shows the upward rising trend and in next seven months number of people using JetRail will cross 6.6 million. Following the same trend, the threshold of one million users set by Unicorn investers for investing in this new mode of transpoatation will be surpassed in 15 months. 
+#####Hence, the analysis suggests that Unicorn Investers can go ahead with thier investment in this new mode of high speed transportation method called JetRail.
+
+
